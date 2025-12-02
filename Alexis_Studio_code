@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<title>Alexis IDE</title>
+
+<style>
+    body {
+        margin: 0;
+        font-family: sans-serif;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        background: #1e1e1e;
+        color: white;
+    }
+
+    /* Toolbar */
+    #toolbar {
+        background: #292929;
+        padding: 10px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+    button {
+        background: #444;
+        border: none;
+        padding: 7px 11px;
+        color: white;
+        border-radius: 4px;
+    }
+
+    /* Editor + Output */
+    #main {
+        display: flex;
+        flex: 1;
+        overflow: hidden;
+    }
+
+    #editor {
+        flex: 1;
+        background: #111;
+        color: #0ff;
+        border: none;
+        outline: none;
+        padding: 10px;
+        font-family: monospace;
+        resize: none;
+    }
+
+    #viewer {
+        flex: 1;
+        background: #222;
+        padding: 10px;
+        overflow: auto;
+        position: relative;
+    }
+
+    #console {
+        background: #000;
+        color: white;
+        padding: 5px;
+        height: 120px;
+        overflow-y: auto;
+        font-family: monospace;
+        border-top: 2px solid #444;
+    }
+
+    .error { color: #ff4a4a; }
+    .warn { color: #ffe44a; }
+    .info { color: #cccccc; }
+
+    /* Themes */
+    .light { background: #e4e4e4; color: black; }
+    .blue  { background: #06172a; color: #b0d6ff; }
+</style>
+</head>
+<body>
+
+<!-- Toolbar -->
+<div id="toolbar">
+    <button onclick="runAlexis()">Run</button>
+    <button onclick="savePrompt()">Save</button>
+    <button onclick="loadPrompt()">Load</button>
+    <button onclick="listProjects()">List</button>
+    <button onclick="deletePrompt()">Delete</button>
+    <button onclick="switchTheme()">Theme</button>
+</div>
+
+<!-- Main layout -->
+<div id="main">
+    <textarea id="editor" placeholder="Write Alexis code here..."></textarea>
+    <div id="viewer">
+        <h3>Output:</h3>
+        <div id="canvasArea"></div>
+    </div>
+</div>
+
+<!-- Console -->
+<div id="console"></div>
+
+<script>
+/* -------------------------------------------------------
+     LOGO — Hexagon with A
+------------------------------------------------------- */
+function drawLogo() {
+    const area = document.getElementById("canvasArea");
+    area.innerHTML = "";
+    let c = document.createElement("canvas");
+    c.width = 120;
+    c.height = 120;
+    let ctx = c.getContext("2d");
+
+    // hexagon
+    ctx.fillStyle = "#4ca6ff";
+    ctx.beginPath();
+    let s = 50, x = 60, y = 60;
+    for (let i = 0; i < 6; i++) {
+        let ang = Math.PI / 3 * i - Math.PI / 6;
+        ctx.lineTo(x + s * Math.cos(ang), y + s * Math.sin(ang));
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    // darker diagonal
+    ctx.fillStyle = "#2d75b8";
+    ctx.beginPath();
+    ctx.moveTo(60 - 50, 60);
+    ctx.lineTo(60 + 50, 10);
+    ctx.lineTo(60 + 50, 60);
+    ctx.closePath();
+    ctx.fill();
+
+    // big A
+    ctx.fillStyle = "white";
+    ctx.font = "bold 50px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("A", 60, 70);
+
+    area.appendChild(c);
+}
+drawLogo();
+
+/* -------------------------------------------------------
+     CONSOLE SYSTEM
+------------------------------------------------------- */
+function logInfo(msg) {
+    document.getElementById("console").innerHTML += `<div class="info">${msg}</div>`;
+}
+function logWarn(msg) {
+    document.getElementById("console").innerHTML += `<div class="warn">WARNING: ${msg}</div>`;
+}
+function logErr(msg) {
+    document.getElementById("console").innerHTML += `<div class="error">ERROR: ${msg}</div>`;
+}
+function clearConsole() {
+    document.getElementById("console").innerHTML = "";
+}
+
+/* -------------------------------------------------------
+     ALEXIS INTERPRETER
+------------------------------------------------------- */
+
+let ALEX_vars = {};
+let ALEX_events = {};
+
+async function runAlexis() {
+    clearConsole();
+    const viewer = document.getElementById("canvasArea");
+    viewer.innerHTML = "";
+    drawLogo();
+
+    ALEX_vars = {};
+
+    const lines = document.getElementById("editor").value.split("\n");
+
+    for (let line of lines) {
+        line = line.trim();
+        if (line === "" || line.startsWith("//")) continue;
+
+        // say
+        if (line.startsWith("say")) {
+            let text = line.match(/"([^"]+)"/);
+            if (text) {
+                logInfo(text[1]);
+            } else logErr("Invalid say syntax.");
+        }
+
+        // wait
+        else if (line.startsWith("wait")) {
+            let num = parseInt(line.replace("wait", "").trim());
+            if (!isNaN(num)) await new Promise(r => setTimeout(r, num));
+            else logErr("Invalid wait time.");
+        }
+
+        // variable system
+        else if (line.startsWith("variable")) {
+            let match = line.match(/variable ([^=]+)=\s*"([^"]+)"/);
+            if (!match) {
+                logErr("Variable syntax error.");
+                continue;
+            }
+            let name = match[1].trim();
+            let value = match[2];
+            ALEX_vars[name] = value;
+        }
+
+        // send event
+        else if (line.startsWith("send")) {
+            let match = line.match(/"([^"]+)"/);
+            if (match) {
+                let ev = match[1];
+                if (ALEX_events[ev]) ALEX_events[ev]();
+                logInfo("Sent: " + ev);
+            }
+        }
+
+        // recv (register)
+        else if (line.startsWith("recv")) {
+            let match = line.match(/"([^"]+)"/);
+            if (match) {
+                let ev = match[1];
+                ALEX_events[ev] = () => logInfo(`Received: ${ev}`);
+            }
+        }
+
+        // SHAPES
+        else if (line.startsWith("show square")) {
+            renderSquare(line);
+        }
+
+        else {
+            logWarn("Unknown command: " + line);
+        }
+    }
+}
+
+/* -------------------------------------------------------
+     SHAPE RENDERING
+------------------------------------------------------- */
+function renderSquare(line) {
+    const viewer = document.getElementById("canvasArea");
+
+    let name = line.match(/"([^"]+)"/)?.[1];
+    let width = parseInt(line.match(/width\s*=\s*(\d+)/)?.[1] || 80);
+    let height = parseInt(line.match(/height\s*=\s*(\d+)/)?.[1] || 80);
+    let color = line.match(/color\s*=\s*(#[0-9A-Fa-f]+)/)?.[1] || "#00aaff";
+    let btn = /button\s*=\s*true/.test(line);
+    let text = line.match(/buttontext\s*=\s*"([^"]+)"/)?.[1] || "";
+    let sendEvent = line.match(/send\s*=\s*"([^"]+)"/)?.[1];
+
+    let div = document.createElement("div");
+    div.style.width = width + "px";
+    div.style.height = height + "px";
+    div.style.background = color;
+    div.style.margin = "10px";
+    div.style.display = "flex";
+    div.style.alignItems = "center";
+    div.style.justifyContent = "center";
+    div.style.borderRadius = "8px";
+    div.style.color = "white";
+    div.style.fontWeight = "bold";
+    div.innerText = btn ? text : name;
+
+    if (btn) {
+        div.style.cursor = "pointer";
+        div.onclick = () => {
+            if (sendEvent) {
+                if (ALEX_events[sendEvent]) ALEX_events[sendEvent]();
+                logInfo("Button sent: " + sendEvent);
+            }
+        };
+    }
+
+    viewer.appendChild(div);
+}
+
+/* -------------------------------------------------------
+     SAVE / LOAD
+------------------------------------------------------- */
+
+function saveProject(name, script) {
+    localStorage.setItem("alexis_" + name, script);
+}
+
+function loadProject(name) {
+    return localStorage.getItem("alexis_" + name);
+}
+
+function savePrompt() {
+    let n = prompt("Save as:");
+    if (!n) return;
+    saveProject(n, document.getElementById("editor").value);
+    alert("Saved!");
+}
+
+function loadPrompt() {
+    let n = prompt("Load which project?");
+    if (!n) return;
+    let script = loadProject(n);
+    if (!script) return alert("Not found!");
+    document.getElementById("editor").value = script;
+    alert("Loaded!");
+}
+
+function listProjects() {
+    let keys = Object.keys(localStorage).filter(k => k.startsWith("alexis_"));
+    alert(keys.map(k => k.replace("alexis_", "")).join("\n") || "None");
+}
+
+function deletePrompt() {
+    let n = prompt("Delete which?");
+    if (!n) return;
+    localStorage.removeItem("alexis_" + n);
+    alert("Deleted.");
+}
+
+/* -------------------------------------------------------
+     THEMES
+------------------------------------------------------- */
+let themeList = ["dark", "light", "blue"];
+let themeIndex = 0;
+
+function switchTheme() {
+    themeIndex = (themeIndex + 1) % themeList.length;
+    let theme = themeList[themeIndex];
+
+    if (theme === "dark") document.body.className = "";
+    if (theme === "light") document.body.className = "light";
+    if (theme === "blue") document.body.className = "blue";
+}
+</script>
+
+</body>
+</html>
