@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alexis Studio</title>
+<style>
+:root {
+  --bg-editor:#1b1b1b; --text-editor:#ffffff;
+  --bg-output:#2a2a2a; --text-output:#ffffff;
+  --bg-toolbar:#1b1b1b; --text-toolbar:#ffffff;
+  --bg-tab:#333333; --text-tab:#ffffff;
+  --bg-button:#0099ff; --text-button:#ffffff;
+}
+body{margin:0;font-family:sans-serif;display:flex;flex-direction:column;height:100vh;}
+#toolbar{display:flex;align-items:center;gap:10px;padding:5px 10px;background-color:var(--bg-toolbar);color:var(--text-toolbar);}
+#toolbar img{height:32px;}
+#tabs{display:flex;}
+#tabs button{flex:1;padding:8px;background-color:var(--bg-tab);color:var(--text-tab);border:none;cursor:pointer;}
+#tabs button.active{border-bottom:3px solid var(--bg-button);}
+#workspace{display:flex;flex:1;overflow:hidden;}
+#editor,#output{flex:1;padding:10px;overflow:auto;}
+#editor{background-color:var(--bg-editor);color:var(--text-editor);resize:none;}
+#output{background-color:var(--bg-output);color:var(--text-output);position:relative;}
+.console-line{margin:2px 0;}
+.shape{position:absolute;display:flex;align-items:center;justify-content:center;cursor:default;border:1px solid #000;}
+</style>
+</head>
+<body>
+
+<!-- Toolbar -->
+<div id="toolbar">
+  <img src="alexis_logo.png" alt="Alexis Logo">
+  <span class="title">Alexis Studio</span>
+  <button onclick="saveCurrent()">Save</button>
+  <button onclick="loadCurrent()">Load</button>
+  <select onchange="setTheme(this.value)">
+    <option value="light">Light</option>
+    <option value="dark" selected>Dark</option>
+    <option value="dark-blue">Dark Blue</option>
+    <option value="true-black">True Black</option>
+  </select>
+</div>
+
+<!-- Tabs -->
+<div id="tabs">
+  <button class="active" onclick="switchTab('code')">Code</button>
+  <button onclick="switchTab('run')">Run</button>
+</div>
+
+<!-- Workspace -->
+<div id="workspace">
+  <textarea id="editor" spellcheck="false" placeholder="Type your Alexis code here..."></textarea>
+  <div id="output"></div>
+</div>
+
+<script>
+// Globals
+let variables = {};
+let channels = {};
+let consoleCounts = {};
+let currentTheme = "dark";
+let shapes = [];
+
+// Logger
+function logConsole(msg, type="info"){
+  const key=`${type}|${msg}`;
+  if(consoleCounts[key]) consoleCounts[key]++;
+  else consoleCounts[key]=1;
+  let display=msg;
+  if(consoleCounts[key]>2) display+=` (${consoleCounts[key]})`;
+
+  const line=document.createElement("div");
+  let icon="ℹ️", color=(currentTheme==="dark"||currentTheme==="true-black")?"#FFF":"#000";
+  if(type==="warning"){icon="⚠️";color="yellow";}
+  else if(type==="error"){icon="⛔️";color="red";}
+  line.className="console-line"; line.innerText=`${icon} ${display}`; line.style.color=color;
+  document.getElementById("output").appendChild(line);
+  document.getElementById("output").scrollTop=document.getElementById("output").scrollHeight;
+}
+
+// Theme
+function setTheme(theme){
+  const root=document.documentElement;
+  currentTheme=theme;
+  switch(theme){
+    case "light":
+      root.style.setProperty("--bg-editor","#fff");
+      root.style.setProperty("--text-editor","#000");
+      root.style.setProperty("--bg-output","#f0f0f0");
+      root.style.setProperty("--text-output","#000");
+      root.style.setProperty("--bg-toolbar","#e0e0e0");
+      root.style.setProperty("--text-toolbar","#000");
+      root.style.setProperty("--bg-tab","#ddd");
+      root.style.setProperty("--text-tab","#000");
+      root.style.setProperty("--bg-button","#0077ff");
+      root.style.setProperty("--text-button","#fff");
+      break;
+    case "dark":
+      root.style.setProperty("--bg-editor","#1b1b1b");
+      root.style.setProperty("--text-editor","#fff");
+      root.style.setProperty("--bg-output","#2a2a2a");
+      root.style.setProperty("--text-output","#fff");
+      root.style.setProperty("--bg-toolbar","#1b1b1b");
+      root.style.setProperty("--text-toolbar","#fff");
+      root.style.setProperty("--bg-tab","#333");
+      root.style.setProperty("--text-tab","#fff");
+      root.style.setProperty("--bg-button","#0099ff");
+      root.style.setProperty("--text-button","#fff");
+      break;
+    case "dark-blue":
+      root.style.setProperty("--bg-editor","#1b1f3b");
+      root.style.setProperty("--text-editor","#fff");
+      root.style.setProperty("--bg-output","#2a2f5c");
+      root.style.setProperty("--text-output","#fff");
+      root.style.setProperty("--bg-toolbar","#1b1f3b");
+      root.style.setProperty("--text-toolbar","#fff");
+      root.style.setProperty("--bg-tab","#2a2f5c");
+      root.style.setProperty("--text-tab","#fff");
+      root.style.setProperty("--bg-button","#33aaff");
+      root.style.setProperty("--text-button","#fff");
+      break;
+    case "true-black":
+      root.style.setProperty("--bg-editor","#000");
+      root.style.setProperty("--text-editor","#fff");
+      root.style.setProperty("--bg-output","#000");
+      root.style.setProperty("--text-output","#fff");
+      root.style.setProperty("--bg-toolbar","#000");
+      root.style.setProperty("--text-toolbar","#fff");
+      root.style.setProperty("--bg-tab","#111");
+      root.style.setProperty("--text-tab","#fff");
+      root.style.setProperty("--bg-button","#1a73e8");
+      root.style.setProperty("--text-button","#fff");
+      break;
+  }
+}
+
+// Tabs
+function switchTab(tab){
+  document.getElementById("editor").style.display=tab==="code"?"block":"none";
+  document.getElementById("output").style.display=tab==="run"?"block":"none";
+  document.querySelectorAll("#tabs button").forEach(b=>b.classList.remove("active"));
+  document.querySelector(`#tabs button:nth-child(${tab==="code"?1:2})`).classList.add("active");
+}
+
+// Save / Load
+function saveCurrent(){
+  const name=prompt("Project name:","untitled"); if(!name)return;
+  localStorage.setItem("alexis_proj_"+name,JSON.stringify({script:document.getElementById("editor").value}));
+  alert(`Project "${name}" saved!`);
+}
+function loadCurrent(){
+  const name=prompt("Project name to load:","untitled"); if(!name)return;
+  const data=JSON.parse(localStorage.getItem("alexis_proj_"+name)||"{}");
+  if(!data.script){alert("Project not found!");return;}
+  document.getElementById("editor").value=data.script;
+  alert(`Project "${name}" loaded!`);
+}
+
+// Parsing & running
+function runScript(){
+  document.getElementById("output").innerHTML=""; consoleCounts={}; variables={}; channels={}; shapes=[];
+  const lines=document.getElementById("editor").value.split("\n");
+
+  function drawVariables(){
+    Object.keys(variables).forEach((key,i)=>{
+      let el=document.getElementById("var_"+key);
+      if(!el){el=document.createElement("div"); el.id="var_"+key; el.className="shape"; el.style.position="absolute"; document.getElementById("output").appendChild(el);}
+      el.innerText=variables[key];
+      el.style.left="0px"; el.style.top=50*i+"px"; el.style.color="#FFFFFF"; el.style.fontSize="18px";
+      el.style.background="transparent"; el.style.width="auto"; el.style.height="auto";
+    });
+  }
+
+  lines.forEach(line=>{
+    line=line.trim();
+    if(line.startsWith("say")){
+      const msg=line.match(/"(.*)"/)?.[1]||"";
+      logConsole(msg,"info");
+    }
+    else if(line.startsWith("variable")){
+      const match=line.match(/variable\s+(\w+)\s*=\s*(.*)/);
+      if(match) variables[match[1]] = isNaN(match[2])?match[2].replace(/"/g,""):Number(match[2]);
+      else logConsole("Invalid variable syntax","error");
+    }
+    else if(line.startsWith("text")){
+      const msg=line.match(/"(.*)"/)?.[1]||"";
+      const loc=line.match(/loc\s*=\s*(\d+),\s*(\d+)/);
+      const color=line.match(/color\s*=\s*#([0-9A-Fa-f]{6})/)?.[0]||"#FFFFFF";
+      const size=Number(line.match(/size\s*=\s*(\d+)/)?.[1]||14);
+      const font=line.match(/font\s*=\s*"([^"]+)"/)?.[1]||"sans-serif";
+      const div=document.createElement("div");
+      div.className="shape"; div.innerText=msg;
+      div.style.left=(loc?loc[1]:"0")+"px"; div.style.top=(loc?loc[2]:"0")+"px";
+      div.style.color=color; div.style.fontSize=size+"px"; div.style.fontFamily=font; div.style.background="transparent";
+      document.getElementById("output").appendChild(div);
+    }
+    else if(line.startsWith("show")){
+      let shapeType="square"; if(line.includes("circle")) shapeType="circle"; else if(line.includes("triangle")) shapeType="triangle";
+      const width=Number(line.match(/width\s*=\s*(\d+)/)?.[1]||100);
+      const height=Number(line.match(/height\s*=\s*(\d+)/)?.[1]||100);
+      const color=line.match(/color\s*=\s*#([0-9A-Fa-f]{6})/)?.[0]||"#0099ff";
+      const button=line.includes("button = true");
+      const text=line.match(/text\s*=\s*"([^"]+)"/)?.[1]||"";
+      const textcolor=line.match(/textcolor\s*=\s*#([0-9A-Fa-f]{6})/)?.[0]||"#fff";
+      const size=Number(line.match(/size\s*=\s*(\d+)/)?.[1]||14);
+      const font=line.match(/font\s*=\s*"([^"]+)"/)?.[1]||"sans-serif";
+      const whenclicked=line.includes("whenclicked send");
+
+      const div=document.createElement("div");
+      div.className="shape"; div.style.width=width+"px"; div.style.height=height+"px"; div.style.backgroundColor=color;
+      div.style.left="50px"; div.style.top="50px"; div.innerText=text; div.style.color=textcolor; div.style.fontSize=size+"px"; div.style.fontFamily=font;
+      if(shapeType==="circle") div.style.borderRadius="50%"; if(shapeType==="triangle"){div.style.width="0"; div.style.height="0"; div.style.borderLeft=width/2+"px solid transparent"; div.style.borderRight=width/2+"px solid transparent"; div.style.borderBottom=height+"px solid "+color; div.style.background="transparent"; div.innerText="";}
+      if(button && whenclicked){ div.style.cursor="pointer"; div.addEventListener("click", ()=>{
+        channels["clicked"]=true; logConsole("Button clicked","info");
+        lines.forEach(l=>{
+          if(l.startsWith("recev \"clicked\"")){
+            const action=l.split(",")[1];
+            if(action.includes("=")){
+              const [varname, expr]=action.split("=").map(s=>s.trim());
+              variables[varname]=eval(expr.replace(varname,variables[varname]));
+            }
+          }
+        }); drawVariables();
+      });}
+      document.getElementById("output").appendChild(div);
+    }
+    else if(line.startsWith("recev")){
+      // handled dynamically via click events
+    }
+    else if(line.startsWith("send")){
+      const channel=line.match(/"(.*)"/)?.[1]; if(channel) channels[channel]=true;
+    }
+    else if(line.length>0){
+      logConsole(`Unknown command: "${line}"`,"error");
+    }
+  });
+  drawVariables();
+}
+
+// Run code when switching to Run tab
+document.querySelector("#tabs button:nth-child(2)").addEventListener("click", runScript);
+</script>
+
+</body>
+</html>
